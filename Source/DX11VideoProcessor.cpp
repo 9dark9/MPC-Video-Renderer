@@ -2276,13 +2276,7 @@ HRESULT CDX11VideoProcessor::CopySample(IMediaSample* pSample)
 		if (m_srcParams.CSType == CS_YUV && (m_bHdrPreferDoVi || !SourceIsPQorHLG())) {
 			MediaSideDataDOVIMetadata* pDOVIMetadata = nullptr;
 			hr = pMediaSideData->GetSideData(IID_MediaSideDataDOVIMetadataV2, (const BYTE**)&pDOVIMetadata, &size);
-			if (SUCCEEDED(hr)) {
-				if (size != sizeof(MediaSideDataDOVIMetadata)) {
-					hr = E_FAIL;
-				}
-			}
-
-			if (SUCCEEDED(hr) && CheckDoviMetadata(pDOVIMetadata, 1)) {
+			if (SUCCEEDED(hr) && size == sizeof(MediaSideDataDOVIMetadata) && CheckDoviMetadata(pDOVIMetadata, 1)) {
 				const bool bYCCtoRGBChanged = !m_PSConvColorData.bEnable ||
 					(memcmp(
 						&m_Dovi.msd.ColorMetadata.ycc_to_rgb_matrix,
@@ -2349,131 +2343,129 @@ HRESULT CDX11VideoProcessor::CopySample(IMediaSample* pSample)
 					return powf(y, PQ_M2);
 				};
 
-				if (size == sizeof(MediaSideDataDOVIMetadata)) {
-					// Level 1 + 3
-					for (uint32_t i = 0; i < LAV_DOVI_MAX_EXTENSIONS; ++i) {
-						if (pDOVIMetadata->Extensions[i].level == 1) {
-							auto& Level1 = pDOVIMetadata->Extensions[i].Level1;
+				// Level 1 + 3
+				for (uint32_t i = 0; i < LAV_DOVI_MAX_EXTENSIONS; ++i) {
+					if (pDOVIMetadata->Extensions[i].level == 1) {
+						auto& Level1 = pDOVIMetadata->Extensions[i].Level1;
 
-							m_DoviExtensionMetadata.L1.present = true;
-							m_DoviExtensionMetadata.L1.min_pq = Level1.min_pq;
-							m_DoviExtensionMetadata.L1.max_pq = Level1.max_pq;
-							m_DoviExtensionMetadata.L1.avg_pq = Level1.avg_pq;
+						m_DoviExtensionMetadata.L1.present = true;
+						m_DoviExtensionMetadata.L1.min_pq = Level1.min_pq;
+						m_DoviExtensionMetadata.L1.max_pq = Level1.max_pq;
+						m_DoviExtensionMetadata.L1.avg_pq = Level1.avg_pq;
 
-							for (uint32_t k = 0; k < LAV_DOVI_MAX_EXTENSIONS; ++k) {
-								if (pDOVIMetadata->Extensions[k].level == 3) {
-									auto& Level3 = pDOVIMetadata->Extensions[k].Level3;
+						for (uint32_t k = 0; k < LAV_DOVI_MAX_EXTENSIONS; ++k) {
+							if (pDOVIMetadata->Extensions[k].level == 3) {
+								auto& Level3 = pDOVIMetadata->Extensions[k].Level3;
 
-									m_DoviExtensionMetadata.L1.min_pq = m_DoviExtensionMetadata.L1.min_pq + Level3.min_pq_offset - 2048;
-									m_DoviExtensionMetadata.L1.max_pq = m_DoviExtensionMetadata.L1.max_pq + Level3.max_pq_offset - 2048;
-									m_DoviExtensionMetadata.L1.avg_pq = m_DoviExtensionMetadata.L1.avg_pq + Level3.avg_pq_offset - 2048;
+								m_DoviExtensionMetadata.L1.min_pq = m_DoviExtensionMetadata.L1.min_pq + Level3.min_pq_offset - 2048;
+								m_DoviExtensionMetadata.L1.max_pq = m_DoviExtensionMetadata.L1.max_pq + Level3.max_pq_offset - 2048;
+								m_DoviExtensionMetadata.L1.avg_pq = m_DoviExtensionMetadata.L1.avg_pq + Level3.avg_pq_offset - 2048;
 
-									break;
-								}
-							}
-
-							m_DoviExtensionMetadata.L1.min_pq = static_cast<UINT>(PqToLinearNits(m_DoviExtensionMetadata.L1.min_pq / 4095.f));
-							m_DoviExtensionMetadata.L1.max_pq = static_cast<UINT>(PqToLinearNits(m_DoviExtensionMetadata.L1.max_pq / 4095.f));
-							m_DoviExtensionMetadata.L1.avg_pq = static_cast<UINT>(PqToLinearNits(m_DoviExtensionMetadata.L1.avg_pq / 4095.f));
-
-							if (m_bHdrPassthroughSupport && m_bHdrLocalToneMapping) {
-								if (m_DoviExtensionMetadata.L1 != m_DoviExtensionMetadata.L1Cached) {
-									m_DoviExtensionMetadata.L1Cached = m_DoviExtensionMetadata.L1;
-									UpdateStatsStatic();
-								}
-							}
-
-							break;
-						}
-					}
-
-					// Level 2
-					float display_pq = LinearNitsToPq(m_iHdrDisplayMaxNits);
-					int lower_index = -1, upper_index = -1;
-					float closest_lower_dist = 1.0f, closest_upper_dist = 1.0f;
-					bool level2Present = false;
-
-					for (uint32_t i = 0; i < LAV_DOVI_MAX_EXTENSIONS; ++i) {
-						if (pDOVIMetadata->Extensions[i].level == 2) {
-							level2Present = true;
-
-							auto& Level2 = pDOVIMetadata->Extensions[i].Level2;
-							float target_pq = Level2.target_max_pq / 4095.0f;
-							if (target_pq <= display_pq) {
-								float dist = display_pq - target_pq;
-								if (dist < closest_lower_dist) {
-									closest_lower_dist = dist;
-									lower_index = i;
-								}
-							} else {
-								float dist = target_pq - display_pq;
-								if (dist < closest_upper_dist) {
-									closest_upper_dist = dist;
-									upper_index = i;
-								}
+								break;
 							}
 						}
+
+						m_DoviExtensionMetadata.L1.min_pq = static_cast<UINT>(PqToLinearNits(m_DoviExtensionMetadata.L1.min_pq / 4095.f));
+						m_DoviExtensionMetadata.L1.max_pq = static_cast<UINT>(PqToLinearNits(m_DoviExtensionMetadata.L1.max_pq / 4095.f));
+						m_DoviExtensionMetadata.L1.avg_pq = static_cast<UINT>(PqToLinearNits(m_DoviExtensionMetadata.L1.avg_pq / 4095.f));
+
+						if (m_bHdrPassthroughSupport && m_bHdrLocalToneMapping) {
+							if (m_DoviExtensionMetadata.L1 != m_DoviExtensionMetadata.L1Cached) {
+								m_DoviExtensionMetadata.L1Cached = m_DoviExtensionMetadata.L1;
+								UpdateStatsStatic();
+							}
+						}
+
+						break;
 					}
+				}
 
-					if (level2Present) {
-						float t_slope = 1.0f, t_offset = 0.0f, t_power = 1.0f;
-						float t_chroma = 0.0f, t_sat = 0.0f;
+				// Level 2
+				float display_pq = LinearNitsToPq(m_iHdrDisplayMaxNits);
+				int lower_index = -1, upper_index = -1;
+				float closest_lower_dist = 1.0f, closest_upper_dist = 1.0f;
+				bool level2Present = false;
 
-						// SCENARIO A: Display is BETWEEN two targets
-						if (lower_index != -1 && upper_index != -1) {
-							float lower_pq = pDOVIMetadata->Extensions[lower_index].Level2.target_max_pq / 4095.0f;
-							float upper_pq = pDOVIMetadata->Extensions[upper_index].Level2.target_max_pq / 4095.0f;
+				for (uint32_t i = 0; i < LAV_DOVI_MAX_EXTENSIONS; ++i) {
+					if (pDOVIMetadata->Extensions[i].level == 2) {
+						level2Present = true;
 
-							float weight = (upper_pq != lower_pq) ? (display_pq - lower_pq) / (upper_pq - lower_pq) : 0.0f;
-							weight = std::clamp(weight, 0.0f, 1.0f);
+						auto& Level2 = pDOVIMetadata->Extensions[i].Level2;
+						float target_pq = Level2.target_max_pq / 4095.0f;
+						if (target_pq <= display_pq) {
+							float dist = display_pq - target_pq;
+							if (dist < closest_lower_dist) {
+								closest_lower_dist = dist;
+								lower_index = i;
+							}
+						} else {
+							float dist = target_pq - display_pq;
+							if (dist < closest_upper_dist) {
+								closest_upper_dist = dist;
+								upper_index = i;
+							}
+						}
+					}
+				}
 
-							t_slope = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_slope),
-												static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_slope),
+				if (level2Present) {
+					float t_slope = 1.0f, t_offset = 0.0f, t_power = 1.0f;
+					float t_chroma = 0.0f, t_sat = 0.0f;
+
+					// SCENARIO A: Display is BETWEEN two targets
+					if (lower_index != -1 && upper_index != -1) {
+						float lower_pq = pDOVIMetadata->Extensions[lower_index].Level2.target_max_pq / 4095.0f;
+						float upper_pq = pDOVIMetadata->Extensions[upper_index].Level2.target_max_pq / 4095.0f;
+
+						float weight = (upper_pq != lower_pq) ? (display_pq - lower_pq) / (upper_pq - lower_pq) : 0.0f;
+						weight = std::clamp(weight, 0.0f, 1.0f);
+
+						t_slope = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_slope),
+											static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_slope),
+											weight);
+						t_offset = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_offset),
+												static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_offset),
 												weight);
-							t_offset = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_offset),
-												 static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_offset),
-												 weight);
-							t_power = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_power),
-												static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_power),
+						t_power = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_power),
+											static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_power),
+											weight);
+						t_chroma = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_chroma_weight),
+												static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_chroma_weight),
 												weight);
-							t_chroma = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_chroma_weight),
-												 static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_chroma_weight),
-												 weight);
-							t_sat = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_saturation_gain),
-											  static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_saturation_gain),
-											  weight);
-						}
-						// SCENARIO B: Display is BRIGHTER than all targets (Interpolate towards Master/Neutral)
-						else if (lower_index != -1 && upper_index == -1) {
-							float master_pq = pDOVIMetadata->ColorMetadata.source_max_pq / 4095.0f;
-
-							float lower_pq = pDOVIMetadata->Extensions[lower_index].Level2.target_max_pq / 4095.0f;
-							float weight = (master_pq > lower_pq) ? (display_pq - lower_pq) / (master_pq - lower_pq) : 0.0f;
-							weight = std::clamp(weight, 0.0f, 1.0f);
-
-							t_slope = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_slope), 2048.0f, weight);
-							t_offset = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_offset), 2048.0f, weight);
-							t_power = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_power), 2048.0f, weight);
-							t_chroma = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_chroma_weight), 2048.0f, weight);
-							t_sat = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_saturation_gain), 2048.0f, weight);
-						}
-						// SCENARIO C: Display is DIMMER than all targets (Clamp to the lowest available target)
-						else if (lower_index == -1 && upper_index != -1) {
-							t_slope = pDOVIMetadata->Extensions[upper_index].Level2.trim_slope;
-							t_offset = pDOVIMetadata->Extensions[upper_index].Level2.trim_offset;
-							t_power = pDOVIMetadata->Extensions[upper_index].Level2.trim_power;
-							t_chroma = pDOVIMetadata->Extensions[upper_index].Level2.trim_chroma_weight;
-							t_sat = pDOVIMetadata->Extensions[upper_index].Level2.trim_saturation_gain;
-						}
-
-						// Final normalization to floating point coefficients
-						m_DoviExtensionMetadata.L2.present = true;
-						m_DoviExtensionMetadata.L2.trim_slope = t_slope / 4096.0f;
-						m_DoviExtensionMetadata.L2.trim_offset = t_offset / 4096.0f;
-						m_DoviExtensionMetadata.L2.trim_power = t_power / 4096.0f;
-						m_DoviExtensionMetadata.L2.trim_saturation_gain = t_sat / 4096.0f;
-						m_DoviExtensionMetadata.L2.trim_chroma_weight = t_chroma / 4096.0f;
+						t_sat = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_saturation_gain),
+											static_cast<float>(pDOVIMetadata->Extensions[upper_index].Level2.trim_saturation_gain),
+											weight);
 					}
+					// SCENARIO B: Display is BRIGHTER than all targets (Interpolate towards Master/Neutral)
+					else if (lower_index != -1 && upper_index == -1) {
+						float master_pq = pDOVIMetadata->ColorMetadata.source_max_pq / 4095.0f;
+
+						float lower_pq = pDOVIMetadata->Extensions[lower_index].Level2.target_max_pq / 4095.0f;
+						float weight = (master_pq > lower_pq) ? (display_pq - lower_pq) / (master_pq - lower_pq) : 0.0f;
+						weight = std::clamp(weight, 0.0f, 1.0f);
+
+						t_slope = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_slope), 2048.0f, weight);
+						t_offset = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_offset), 2048.0f, weight);
+						t_power = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_power), 2048.0f, weight);
+						t_chroma = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_chroma_weight), 2048.0f, weight);
+						t_sat = std::lerp(static_cast<float>(pDOVIMetadata->Extensions[lower_index].Level2.trim_saturation_gain), 2048.0f, weight);
+					}
+					// SCENARIO C: Display is DIMMER than all targets (Clamp to the lowest available target)
+					else if (lower_index == -1 && upper_index != -1) {
+						t_slope = pDOVIMetadata->Extensions[upper_index].Level2.trim_slope;
+						t_offset = pDOVIMetadata->Extensions[upper_index].Level2.trim_offset;
+						t_power = pDOVIMetadata->Extensions[upper_index].Level2.trim_power;
+						t_chroma = pDOVIMetadata->Extensions[upper_index].Level2.trim_chroma_weight;
+						t_sat = pDOVIMetadata->Extensions[upper_index].Level2.trim_saturation_gain;
+					}
+
+					// Final normalization to floating point coefficients
+					m_DoviExtensionMetadata.L2.present = true;
+					m_DoviExtensionMetadata.L2.trim_slope = t_slope / 4096.0f;
+					m_DoviExtensionMetadata.L2.trim_offset = t_offset / 4096.0f;
+					m_DoviExtensionMetadata.L2.trim_power = t_power / 4096.0f;
+					m_DoviExtensionMetadata.L2.trim_saturation_gain = t_sat / 4096.0f;
+					m_DoviExtensionMetadata.L2.trim_chroma_weight = t_chroma / 4096.0f;
 				}
 
 				SetDolbyVisionDynamicParams();
