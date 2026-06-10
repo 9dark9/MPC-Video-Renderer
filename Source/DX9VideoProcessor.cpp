@@ -1478,6 +1478,9 @@ HRESULT CDX9VideoProcessor::CopySample(IMediaSample* pSample)
 
 			if (m_DXVA2VP.IsReady()) {
 				IDirect3DSurface9* pDXVA2VPSurface = m_DXVA2VP.GetNextInputSurface(m_pFilter->m_FrameStats.GetFrames(), m_CurrentSampleFmt);
+				if (!pDXVA2VPSurface) {
+					return E_FAIL; // driver bug?
+				}
 
 				hr = pDXVA2VPSurface->LockRect(&lr, nullptr, D3DLOCK_DISCARD|D3DLOCK_NOSYSLOCK);
 				if (S_OK == hr) {
